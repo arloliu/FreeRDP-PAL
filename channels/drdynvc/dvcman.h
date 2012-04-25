@@ -21,7 +21,10 @@
 #define __DVCMAN_H
 
 #include <freerdp/dvc.h>
+#include <freerdp/utils/list.h>
 #include "drdynvc_main.h"
+
+#define MAX_PLUGINS 10
 
 IWTSVirtualChannelManager* dvcman_new(drdynvcPlugin* plugin);
 int dvcman_load_plugin(IWTSVirtualChannelManager* pChannelMgr, RDP_PLUGIN_DATA* data);
