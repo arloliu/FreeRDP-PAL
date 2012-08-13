@@ -6,6 +6,7 @@
 #define FREERDP_VERSION_MAJOR ${FREERDP_VERSION_MAJOR}
 #define FREERDP_VERSION_MINOR ${FREERDP_VERSION_MINOR}
 #define FREERDP_VERSION_REVISION ${FREERDP_VERSION_REVISION}
+#define GIT_REVISION "${GIT_REVISION}"
 
 #define FREERDP_DATA_PATH "${FREERDP_DATA_PATH}"
 #define FREERDP_PLUGIN_PATH "${FREERDP_PLUGIN_PATH}"
@@ -25,6 +26,8 @@
 #cmakedefine WITH_PROFILER
 #cmakedefine WITH_SSE2
 #cmakedefine WITH_NEON
+#cmakedefine WITH_NATIVE_SSPI
+#cmakedefine WITH_JPEG
 
 /* Debug */
 #cmakedefine WITH_DEBUG_CERTIFICATE
@@ -37,6 +40,7 @@
 #cmakedefine WITH_DEBUG_NEGO
 #cmakedefine WITH_DEBUG_NLA
 #cmakedefine WITH_DEBUG_NTLM
+#cmakedefine WITH_DEBUG_TSG
 #cmakedefine WITH_DEBUG_ORDERS
 #cmakedefine WITH_DEBUG_RAIL
 #cmakedefine WITH_DEBUG_RDP
@@ -44,6 +48,7 @@
 #cmakedefine WITH_DEBUG_RFX
 #cmakedefine WITH_DEBUG_SCARD
 #cmakedefine WITH_DEBUG_SVC
+#cmakedefine WITH_DEBUG_TIMEZONE
 #cmakedefine WITH_DEBUG_TRANSPORT
 #cmakedefine WITH_DEBUG_WND
 #cmakedefine WITH_DEBUG_X11

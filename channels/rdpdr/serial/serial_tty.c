@@ -30,13 +30,16 @@
 #include <freerdp/utils/svc_plugin.h>
 #include <freerdp/utils/hexdump.h>
 
+#ifndef _WIN32
 #include <unistd.h>
 #include <termios.h>
+#include <dirent.h>
+#include <sys/ioctl.h>
+#endif
+
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <dirent.h>
-#include <sys/ioctl.h>
 #include <errno.h>
 
 #include "rdpdr_constants.h"
@@ -434,13 +437,21 @@ boolean serial_tty_write(SERIAL_TTY* tty, uint8* buffer, uint32 Length)
 	return true;
 }
 
+/**
+ * This function is used to deallocated a SERIAL_TTY structure.
+ *
+ * @param tty [in]	- pointer to the SERIAL_TTY structure to deallocate.
+ * 					  This will typically be allocated by a call to serial_tty_new().
+ *					  On return, this pointer is invalid.
+ */
 void serial_tty_free(SERIAL_TTY* tty)
 {
 	DEBUG_SVC("in");
 
 	if (tty->fd >= 0)
 	{
-		tcsetattr(tty->fd, TCSANOW, tty->pold_termios);
+		if (tty->pold_termios)
+			tcsetattr(tty->fd, TCSANOW, tty->pold_termios);
 		close(tty->fd);
 	}
 
@@ -448,6 +459,7 @@ void serial_tty_free(SERIAL_TTY* tty)
 	xfree(tty->pold_termios);
 	xfree(tty);
 }
+
 
 SERIAL_TTY* serial_tty_new(const char* path, uint32 id)
 {
@@ -460,21 +472,32 @@ SERIAL_TTY* serial_tty_new(const char* path, uint32 id)
 	{
 		perror("open");
 		DEBUG_WARN("failed to open device %s", path);
+		serial_tty_free(tty) ;
 		return NULL;
 	}
 	else
 		DEBUG_SVC("tty fd %d successfully opened", tty->fd);
 
-	tty->ptermios = (struct termios*) malloc(sizeof(struct termios));
-	memset(tty->ptermios, 0, sizeof(struct termios));
-	tty->pold_termios = (struct termios*) malloc(sizeof(struct termios));
-	memset(tty->pold_termios, 0, sizeof(struct termios));
+	tty->ptermios = (struct termios*) xzalloc(sizeof(struct termios));
+	if (tty->ptermios == NULL)
+	{
+		serial_tty_free(tty) ;
+		return NULL ;
+	}
+
+	tty->pold_termios = (struct termios*) xzalloc(sizeof(struct termios));
+	if (tty->pold_termios == NULL)
+	{
+		serial_tty_free(tty) ;
+		return NULL ;
+	}
 	tcgetattr(tty->fd, tty->pold_termios);
 
 	if (!tty_get_termios(tty))
 	{
 		DEBUG_WARN("%s access denied", path);
 		fflush(stdout);
+		serial_tty_free(tty) ;
 		return NULL;
 	}
 
@@ -497,6 +520,7 @@ SERIAL_TTY* serial_tty_new(const char* path, uint32 id)
 	{
 		DEBUG_WARN("%s fcntl", path);
 		perror("fcntl");
+		serial_tty_free(tty) ;
 		return NULL;
 	}
 

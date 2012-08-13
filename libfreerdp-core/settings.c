@@ -29,7 +29,85 @@
 #include <freerdp/settings.h>
 #include <freerdp/utils/file.h>
 
+#include <winpr/registry.h>
+
 static const char client_dll[] = "C:\\Windows\\System32\\mstscax.dll";
+
+void settings_client_load_hkey_local_machine(rdpSettings* settings)
+{
+	HKEY hKey;
+	LONG status;
+	DWORD dwType;
+	DWORD dwSize;
+	DWORD dwValue;
+
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Client"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+
+	if (status != ERROR_SUCCESS)
+		return;
+
+	if (RegQueryValueEx(hKey, _T("DesktopWidth"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->width = dwValue;
+
+	if (RegQueryValueEx(hKey, _T("DesktopHeight"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->height = dwValue;
+
+	if (RegQueryValueEx(hKey, _T("KeyboardType"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->kbd_type = dwValue;
+
+	if (RegQueryValueEx(hKey, _T("KeyboardSubType"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->kbd_subtype = dwValue;
+
+	if (RegQueryValueEx(hKey, _T("KeyboardFunctionKeys"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->kbd_fn_keys = dwValue;
+
+	if (RegQueryValueEx(hKey, _T("KeyboardLayout"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->kbd_layout = dwValue;
+
+	if (RegQueryValueEx(hKey, _T("NlaSecurity"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->nla_security = dwValue ? 1 : 0;
+
+	if (RegQueryValueEx(hKey, _T("TlsSecurity"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->tls_security = dwValue ? 1 : 0;
+
+	if (RegQueryValueEx(hKey, _T("RdpSecurity"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->rdp_security = dwValue ? 1 : 0;
+
+	RegCloseKey(hKey);
+}
+
+void settings_server_load_hkey_local_machine(rdpSettings* settings)
+{
+	HKEY hKey;
+	LONG status;
+	DWORD dwType;
+	DWORD dwSize;
+	DWORD dwValue;
+
+	status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"), 0, KEY_READ | KEY_WOW64_64KEY, &hKey);
+
+	if (status != ERROR_SUCCESS)
+		return;
+
+	if (RegQueryValueEx(hKey, _T("NlaSecurity"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->nla_security = dwValue ? 1 : 0;
+
+	if (RegQueryValueEx(hKey, _T("TlsSecurity"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->tls_security = dwValue ? 1 : 0;
+
+	if (RegQueryValueEx(hKey, _T("RdpSecurity"), NULL, &dwType, (BYTE*) &dwValue, &dwSize) == ERROR_SUCCESS)
+		settings->rdp_security = dwValue ? 1 : 0;
+
+	RegCloseKey(hKey);
+}
+
+void settings_load_hkey_local_machine(rdpSettings* settings)
+{
+	if (settings->server_mode)
+		settings_server_load_hkey_local_machine(settings);
+	else
+		settings_client_load_hkey_local_machine(settings);
+}
 
 rdpSettings* settings_new(void* instance)
 {
@@ -40,6 +118,11 @@ rdpSettings* settings_new(void* instance)
 	if (settings != NULL)
 	{
 		settings->instance = instance;
+
+		/* Server instances are NULL */
+
+		if (!settings->instance)
+			settings->server_mode = true;
 
 		settings->width = 1024;
 		settings->height = 768;
@@ -52,6 +135,7 @@ rdpSettings* settings_new(void* instance)
 		settings->nla_security = true;
 		settings->tls_security = true;
 		settings->rdp_security = true;
+		settings->security_layer_negotiation = true;
 		settings->client_build = 2600;
 		settings->kbd_type = 4; /* @msdn{cc240510} 'IBM enhanced (101- or 102-key) keyboard' */
 		settings->kbd_subtype = 0;
@@ -73,6 +157,8 @@ rdpSettings* settings_new(void* instance)
 		settings->encryption_level = ENCRYPTION_LEVEL_NONE;
 
 		settings->authentication = true;
+		settings->authentication_only = false;
+		settings->from_stdin = false;
 
 		settings->received_caps = xzalloc(32);
 		settings->order_support = xzalloc(32);
@@ -154,7 +240,7 @@ rdpSettings* settings_new(void* instance)
 
 		settings->offscreen_bitmap_cache = true;
 		settings->offscreen_bitmap_cache_size = 7680;
-		settings->offscreen_bitmap_cache_entries = 100;
+		settings->offscreen_bitmap_cache_entries = 2000;
 
 		settings->draw_nine_grid_cache_size = 2560;
 		settings->draw_nine_grid_cache_entries = 256;
@@ -171,8 +257,11 @@ rdpSettings* settings_new(void* instance)
 		settings->fastpath_input = true;
 		settings->fastpath_output = true;
 
+		settings->frame_acknowledge = 2;
+
 		settings->uniconv = freerdp_uniconv_new();
-		gethostname(settings->client_hostname, sizeof(settings->client_hostname) - 1);
+		gethostname(settings->client_hostname, 31);
+		settings->client_hostname[31] = 0;
 		settings->mouse_motion = true;
 
 		settings->client_auto_reconnect_cookie = xnew(ARC_CS_PRIVATE_PACKET);
@@ -183,6 +272,8 @@ rdpSettings* settings_new(void* instance)
 		settings->server_certificate = xnew(rdpBlob);
 
 		freerdp_detect_paths(settings);
+
+		settings_load_hkey_local_machine(settings);
 	}
 
 	return settings;

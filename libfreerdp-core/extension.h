@@ -21,10 +21,11 @@
 #ifndef __EXTENSION_H
 #define __EXTENSION_H
 
+#include <winpr/windows.h>
+
 #include <freerdp/api.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/extension.h>
-#include <freerdp/utils/windows.h>
 
 #define FREERDP_EXT_MAX_COUNT 16
 
@@ -47,6 +48,7 @@ FREERDP_API int extension_post_connect(rdpExtension* extension);
 
 FREERDP_API rdpExtension* extension_new(freerdp* instance);
 FREERDP_API void extension_free(rdpExtension* extension);
+FREERDP_API void extension_load_and_init_plugins(rdpExtension* extension);
 
 #endif /* __EXTENSION_H */
 

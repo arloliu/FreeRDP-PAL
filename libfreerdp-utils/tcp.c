@@ -45,7 +45,7 @@
 
 #else /* ifdef _WIN32 */
 
-#include <freerdp/utils/windows.h>
+#include <winpr/windows.h>
 #define SHUT_RDWR SD_BOTH
 #define close(_fd) closesocket(_fd)
 #endif
@@ -78,6 +78,7 @@ int freerdp_tcp_connect(const char* hostname, int port)
 	}
 
 	sockfd = -1;
+
 	for (ai = res; ai; ai = ai->ai_next)
 	{
 		sockfd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
@@ -94,6 +95,7 @@ int freerdp_tcp_connect(const char* hostname, int port)
 		close(sockfd);
 		sockfd = -1;
 	}
+
 	freeaddrinfo(res);
 
 	if (sockfd == -1)

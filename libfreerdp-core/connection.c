@@ -21,6 +21,9 @@
 #include "input.h"
 
 #include "connection.h"
+#include "transport.h"
+
+#include <freerdp/errorcodes.h>
 
 /**
  *                                      Connection Sequence\n
@@ -61,48 +64,46 @@
 
 boolean rdp_client_connect(rdpRdp* rdp)
 {
-	boolean status;
-	uint32 selectedProtocol;
 	rdpSettings* settings = rdp->settings;
 
 	nego_init(rdp->nego);
 	nego_set_target(rdp->nego, settings->hostname, settings->port);
 	nego_set_cookie(rdp->nego, settings->username);
-	nego_enable_rdp(rdp->nego, settings->rdp_security);
-	nego_enable_nla(rdp->nego, settings->nla_security);
-	nego_enable_tls(rdp->nego, settings->tls_security);
+	nego_set_send_preconnection_pdu(rdp->nego, settings->send_preconnection_pdu);
+	nego_set_preconnection_id(rdp->nego, settings->preconnection_id);
+	nego_set_preconnection_blob(rdp->nego, settings->preconnection_blob);
 
-	if (nego_connect(rdp->nego) != true)
+	nego_set_negotiation_enabled(rdp->nego, settings->security_layer_negotiation);
+	nego_enable_rdp(rdp->nego, settings->rdp_security);
+
+	if (!settings->ts_gateway)
 	{
-		printf("Error: protocol security negotiation failure\n");
+		nego_enable_nla(rdp->nego, settings->nla_security);
+		nego_enable_tls(rdp->nego, settings->tls_security);
+	}
+
+	if (!nego_connect(rdp->nego))
+	{
+		printf("Error: protocol security negotiation or connection failure\n");
 		return false;
 	}
 
-	selectedProtocol = rdp->nego->selected_protocol;
-
-	if ((selectedProtocol & PROTOCOL_TLS) || (selectedProtocol == PROTOCOL_RDP))
+	if ((rdp->nego->selected_protocol & PROTOCOL_TLS) || (rdp->nego->selected_protocol == PROTOCOL_RDP))
 	{
 		if ((settings->username != NULL) && ((settings->password != NULL) || (settings->password_cookie != NULL && settings->password_cookie->length > 0)))
 			settings->autologon = true;
 	}
 
-	status = false;
-	if (selectedProtocol & PROTOCOL_NLA)
-		status = transport_connect_nla(rdp->transport);
-	else if (selectedProtocol & PROTOCOL_TLS)
-		status = transport_connect_tls(rdp->transport);
-	else if (selectedProtocol == PROTOCOL_RDP) /* 0 */
-		status = transport_connect_rdp(rdp->transport);
-
-	if (status != true)
-		return false;
-
 	rdp_set_blocking_mode(rdp, false);
 	rdp->state = CONNECTION_STATE_NEGO;
 	rdp->finalize_sc_pdus = 0;
 
-	if (mcs_send_connect_initial(rdp->mcs) != true)
+	if (!mcs_send_connect_initial(rdp->mcs))
 	{
+		if (!connectErrorCode)
+		{
+			connectErrorCode = MCSCONNECTINITIALERROR;                      
+		}
 		printf("Error: unable to send MCS Connect Initial\n");
 		return false;
 	}
@@ -503,9 +504,6 @@ boolean rdp_client_connect_finalize(rdpRdp* rdp)
 		return false;
 	if (!rdp_send_client_control_pdu(rdp, CTRLACTION_REQUEST_CONTROL))
 		return false;
-
-	rdp->input->SynchronizeEvent(rdp->input, 0);
-
 	if (!rdp_send_client_persistent_key_list_pdu(rdp))
 		return false;
 	if (!rdp_send_client_font_list_pdu(rdp, FONTLIST_FIRST | FONTLIST_LAST))
@@ -517,6 +515,7 @@ boolean rdp_client_connect_finalize(rdpRdp* rdp)
 boolean rdp_server_accept_nego(rdpRdp* rdp, STREAM* s)
 {
 	boolean status;
+	rdpSettings* settings = rdp->settings;
 
 	transport_set_blocking_mode(rdp->transport, true);
 
@@ -525,38 +524,35 @@ boolean rdp_server_accept_nego(rdpRdp* rdp, STREAM* s)
 
 	rdp->nego->selected_protocol = 0;
 
-	printf("Requested protocols:");
-	if ((rdp->nego->requested_protocols & PROTOCOL_TLS))
+	printf("Client Security: NLA:%d TLS:%d RDP:%d\n",
+			(rdp->nego->requested_protocols & PROTOCOL_NLA) ? 1 : 0,
+			(rdp->nego->requested_protocols & PROTOCOL_TLS)	? 1 : 0,
+			(rdp->nego->requested_protocols == PROTOCOL_RDP) ? 1: 0);
+
+	printf("Server Security: NLA:%d TLS:%d RDP:%d\n",
+			settings->nla_security, settings->tls_security, settings->rdp_security);
+
+	if ((settings->nla_security) && (rdp->nego->requested_protocols & PROTOCOL_NLA))
 	{
-		printf(" TLS");
-		if (rdp->settings->tls_security)
-		{
-			printf("(Y)");
-			rdp->nego->selected_protocol |= PROTOCOL_TLS;
-		}
-		else
-			printf("(n)");
+		rdp->nego->selected_protocol = PROTOCOL_NLA;
 	}
-	if ((rdp->nego->requested_protocols & PROTOCOL_NLA))
+	else if ((settings->tls_security) && (rdp->nego->requested_protocols & PROTOCOL_TLS))
 	{
-		printf(" NLA");
-		if (rdp->settings->nla_security)
-		{
-			printf("(Y)");
-			rdp->nego->selected_protocol |= PROTOCOL_NLA;
-		}
-		else
-			printf("(n)");
+		rdp->nego->selected_protocol = PROTOCOL_TLS;
 	}
-	printf(" RDP");
-	if (rdp->settings->rdp_security && rdp->nego->selected_protocol == 0)
+	else if ((settings->rdp_security) && (rdp->nego->selected_protocol == PROTOCOL_RDP))
 	{
-		printf("(Y)");
 		rdp->nego->selected_protocol = PROTOCOL_RDP;
 	}
 	else
-		printf("(n)");
-	printf("\n");
+	{
+		printf("Protocol security negotiation failure\n");
+	}
+
+	printf("Negotiated Security: NLA:%d TLS:%d RDP:%d\n",
+			(rdp->nego->selected_protocol & PROTOCOL_NLA) ? 1 : 0,
+			(rdp->nego->selected_protocol & PROTOCOL_TLS)	? 1 : 0,
+			(rdp->nego->selected_protocol == PROTOCOL_RDP) ? 1: 0);
 
 	if (!nego_send_negotiation_response(rdp->nego))
 		return false;

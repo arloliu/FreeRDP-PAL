@@ -3,6 +3,7 @@
  * Video Redirection Virtual Channel - Interface Manipulation
  *
  * Copyright 2010-2011 Vic Lee
+ * Copyright 2012 Hewlett-Packard Development Company, L.P.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,17 +119,27 @@ int tsmf_ifman_check_format_support_request(TSMF_IFMAN* ifman)
 	return 0;
 }
 
+static TSMF_PRESENTATION* pexisted = 0;
+
 int tsmf_ifman_on_new_presentation(TSMF_IFMAN* ifman)
 {
 	int error = 0;
 	TSMF_PRESENTATION* presentation;
 
 	DEBUG_DVC("");
+	if (pexisted)
+	{
+		ifman->output_pending = false;
+		return 0;
+
+	}
 
 	presentation = tsmf_presentation_new(stream_get_tail(ifman->input), ifman->channel_callback);
+	pexisted = presentation;
 	if (presentation == NULL)
 		error = 1;
-	tsmf_presentation_set_audio_device(presentation, ifman->audio_name, ifman->audio_device);
+	else
+		tsmf_presentation_set_audio_device(presentation, ifman->audio_name, ifman->audio_device);
 	ifman->output_pending = true;
 	return error;
 }
@@ -207,6 +218,8 @@ int tsmf_ifman_shutdown_presentation(TSMF_IFMAN* ifman)
 	if (presentation)
 		tsmf_presentation_free(presentation);
 
+	pexisted = 0;
+
 	stream_check_size(ifman->output, 4);
 	stream_write_uint32(ifman->output, 0); /* Result */
 	ifman->output_interface_id = TSMF_INTERFACE_DEFAULT | STREAM_ID_STUB;
@@ -215,15 +228,56 @@ int tsmf_ifman_shutdown_presentation(TSMF_IFMAN* ifman)
 
 int tsmf_ifman_on_stream_volume(TSMF_IFMAN* ifman)
 {
-	DEBUG_DVC("");
+	TSMF_PRESENTATION* presentation;
+
+	DEBUG_DVC("on stream volume");
+
+	presentation = tsmf_presentation_find_by_id(stream_get_tail(ifman->input));
+
+	if (presentation)
+	{
+		uint32 newVolume;
+		uint32 muted;
+
+		stream_seek(ifman->input, 16);
+		stream_read_uint32(ifman->input, newVolume);
+		DEBUG_DVC("on stream volume: new volume=[%d]", newVolume);
+		stream_read_uint32(ifman->input, muted);
+		DEBUG_DVC("on stream volume: muted=[%d]", muted);
+		tsmf_presentation_volume_changed(presentation, newVolume, muted);
+	}
+	else
+	{
+		DEBUG_WARN("unknown presentation id");
+	}
+
 	ifman->output_pending = true;
+
 	return 0;
 }
 
 int tsmf_ifman_on_channel_volume(TSMF_IFMAN* ifman)
 {
-	DEBUG_DVC("");
+	TSMF_PRESENTATION* presentation;
+
+	DEBUG_DVC("on channel volume");
+	
+	presentation = tsmf_presentation_find_by_id(stream_get_tail(ifman->input));
+
+	if (presentation)
+	{
+		uint32 channelVolume;
+		uint32 changedChannel;
+
+		stream_seek(ifman->input, 16);
+		stream_read_uint32(ifman->input, channelVolume);
+		DEBUG_DVC("on channel volume: channel volume=[%d]", channelVolume);
+		stream_read_uint32(ifman->input, changedChannel);
+		DEBUG_DVC("on stream volume: changed channel=[%d]", changedChannel);
+	}
+	
 	ifman->output_pending = true;
+	
 	return 0;
 }
 
@@ -269,7 +323,9 @@ int tsmf_ifman_update_geometry_info(TSMF_IFMAN* ifman)
 		numGeometryInfo, Width, Height, Left, Top, cbVisibleRect, num_rects);
 
 	if (presentation == NULL)
+	{
 		error = 1;
+	}
 	else
 	{
 		if (num_rects > 0)
@@ -294,7 +350,9 @@ int tsmf_ifman_update_geometry_info(TSMF_IFMAN* ifman)
 		}
 		tsmf_presentation_set_geometry_info(presentation, Left, Top, Width, Height, num_rects, rects);
 	}
+	
 	ifman->output_pending = true;
+
 	return error;
 }
 
@@ -389,9 +447,12 @@ int tsmf_ifman_on_end_of_stream(TSMF_IFMAN* ifman)
 	presentation = tsmf_presentation_find_by_id(stream_get_tail(ifman->input));
 	stream_seek(ifman->input, 16);
 	stream_read_uint32(ifman->input, StreamId);
-	stream = tsmf_stream_find_by_id(presentation, StreamId);
-	tsmf_stream_end(stream);
-
+	if (presentation)
+	{
+		stream = tsmf_stream_find_by_id(presentation, StreamId);
+		if (stream)
+			tsmf_stream_end(stream);
+	}
 	DEBUG_DVC("StreamId %d", StreamId);
 
 	stream_check_size(ifman->output, 16);
@@ -428,15 +489,37 @@ int tsmf_ifman_on_playback_started(TSMF_IFMAN* ifman)
 
 int tsmf_ifman_on_playback_paused(TSMF_IFMAN* ifman)
 {
+	TSMF_PRESENTATION* presentation;
+
 	DEBUG_DVC("");
 	ifman->output_pending = true;
+
+	/* Added pause control so gstreamer pipeline can be paused accordingly */
+
+	presentation = tsmf_presentation_find_by_id(stream_get_tail(ifman->input));
+	if (presentation)
+		tsmf_presentation_paused(presentation);
+	else
+		DEBUG_WARN("unknown presentation id");
 	return 0;
 }
 
 int tsmf_ifman_on_playback_restarted(TSMF_IFMAN* ifman)
 {
+	TSMF_PRESENTATION* presentation;
+
 	DEBUG_DVC("");
 	ifman->output_pending = true;
+
+	/* Added restart control so gstreamer pipeline can be resumed accordingly */
+
+	presentation = tsmf_presentation_find_by_id(stream_get_tail(ifman->input));
+
+	if (presentation)
+		tsmf_presentation_restarted(presentation);
+	else
+		DEBUG_WARN("unknown presentation id");
+	
 	return 0;
 }
 
@@ -447,6 +530,7 @@ int tsmf_ifman_on_playback_stopped(TSMF_IFMAN* ifman)
 	DEBUG_DVC("");
 
 	presentation = tsmf_presentation_find_by_id(stream_get_tail(ifman->input));
+
 	if (presentation)
 		tsmf_presentation_stop(presentation);
 	else

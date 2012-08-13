@@ -71,7 +71,7 @@ rdpBitmap* offscreen_cache_get(rdpOffscreenCache* offscreen_cache, uint32 index)
 {
 	rdpBitmap* bitmap;
 
-	if (index > offscreen_cache->maxEntries)
+	if (index >= offscreen_cache->maxEntries)
 	{
 		printf("invalid offscreen bitmap index: 0x%04X\n", index);
 		return NULL;
@@ -90,7 +90,7 @@ rdpBitmap* offscreen_cache_get(rdpOffscreenCache* offscreen_cache, uint32 index)
 
 void offscreen_cache_put(rdpOffscreenCache* offscreen, uint32 index, rdpBitmap* bitmap)
 {
-	if (index > offscreen->maxEntries)
+	if (index >= offscreen->maxEntries)
 	{
 		printf("invalid offscreen bitmap index: 0x%04X\n", index);
 		return;
@@ -104,7 +104,7 @@ void offscreen_cache_delete(rdpOffscreenCache* offscreen, uint32 index)
 {
 	rdpBitmap* prevBitmap;
 
-	if (index > offscreen->maxEntries)
+	if (index >= offscreen->maxEntries)
 	{
 		printf("invalid offscreen bitmap index (delete): 0x%04X\n", index);
 		return;
@@ -137,7 +137,7 @@ rdpOffscreenCache* offscreen_cache_new(rdpSettings* settings)
 
 		offscreen_cache->currentSurface = SCREEN_BITMAP_SURFACE;
 		offscreen_cache->maxSize = 7680;
-		offscreen_cache->maxEntries = 100;
+		offscreen_cache->maxEntries = 2000;
 
 		settings->offscreen_bitmap_cache_size = offscreen_cache->maxSize;
 		settings->offscreen_bitmap_cache_entries = offscreen_cache->maxEntries;

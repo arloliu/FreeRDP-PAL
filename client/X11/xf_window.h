@@ -58,6 +58,7 @@ struct xf_localmove
 	int window_x; // relative to window
 	int window_y;
 	enum xf_localmove_state state;
+	int direction;
 };
 
 struct xf_window
@@ -76,6 +77,8 @@ struct xf_window
 	boolean is_mapped;
 	boolean is_transient;
 	xfLocalMove local_move;
+	uint8 rail_state;
+	boolean rail_ignore_configure;
 };
 
 void xf_ewmhints_init(xfInfo* xfi);
@@ -91,6 +94,7 @@ xfWindow* xf_CreateDesktopWindow(xfInfo* xfi, char* name, int width, int height,
 void xf_ResizeDesktopWindow(xfInfo* xfi, xfWindow* window, int width, int height);
 
 xfWindow* xf_CreateWindow(xfInfo* xfi, rdpWindow* wnd, int x, int y, int width, int height, uint32 id);
+void xf_SetWindowText(xfInfo *xfi, xfWindow* window, char *name);
 void xf_MoveWindow(xfInfo* xfi, xfWindow* window, int x, int y, int width, int height);
 void xf_ShowWindow(xfInfo* xfi, xfWindow* window, uint8 state);
 void xf_SetWindowIcon(xfInfo* xfi, xfWindow* window, rdpIcon* icon);
