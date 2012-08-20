@@ -50,6 +50,7 @@ set(FREERDP_UTILS_SRCS
 	uds.c
 	unicode.c
 	wait_obj.c
+	region.c
 	msusb.c)
 
 add_library(freerdp-utils ${FREERDP_UTILS_SRCS})
