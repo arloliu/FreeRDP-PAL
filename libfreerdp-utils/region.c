@@ -16,8 +16,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #include <string.h>
-#include <assert.h>
 
 #include <freerdp/utils/region.h>
 #include <freerdp/utils/memory.h>
@@ -133,11 +133,7 @@ static int rdp_region_combine(rdpRegion* pReg, int prevStart, int curStart)
 	pPrevBox = &pReg->rects[prevStart];
 	prevNumRects = curStart - prevStart;
 
-	/*
-	 * Figure out how many rectangles are in the current band. Have to do
-	 * this because multiple bands could have been added in miRegionOp
-	 * at the end when one region has been exhausted.
-	 */
+	/* Find out how many rectangles are in the current band. */
 	pCurBox = &pReg->rects[curStart];
 	bandY1 = pCurBox->y1;
 
@@ -148,12 +144,6 @@ static int rdp_region_combine(rdpRegion* pReg, int prevStart, int curStart)
 
 	if (pCurBox != pRegEnd)
 	{
-		/*
-		 * If more than one band was added, we have to find the start
-		 * of the last band added so the next coalescing job can start
-		 * at the right place... (given when multiple bands are added,
-		 * this may be pointless -- see above).
-		 */
 		pRegEnd--;
 		while (pRegEnd[-1].y1 == pRegEnd->y1)
 		{
@@ -166,25 +156,13 @@ static int rdp_region_combine(rdpRegion* pReg, int prevStart, int curStart)
 	if ((curNumRects == prevNumRects) && (curNumRects != 0))
 	{
 		pCurBox -= curNumRects;
-		/*
-		 * The bands may only be coalesced if the bottom of the previous
-		 * matches the top scanline of the current.
-		 */
+
 		if (pPrevBox->y2 == pCurBox->y1)
 		{
-			/*
-			 * Make sure the bands have boxes in the same places. This
-			 * assumes that boxes have been added in such a way that they
-			 * cover the most area possible. I.e. two boxes in a band must
-			 * have some horizontal space between them.
-			 */
 			do
 			{
 				if ((pPrevBox->x1 != pCurBox->x1) || (pPrevBox->x2 != pCurBox->x2))
 				{
-					/*
-					 * The bands don't line up so they can't be coalesced.
-					 */
 					return (curStart);
 				}
 				pPrevBox++;
@@ -196,11 +174,6 @@ static int rdp_region_combine(rdpRegion* pReg, int prevStart, int curStart)
 			pCurBox -= curNumRects;
 			pPrevBox -= curNumRects;
 
-			/*
-			 * The bands may be merged, so set the bottom y of each box
-			 * in the previous band to that of the corresponding box in
-			 * the current band.
-			 */
 			do
 			{
 				pPrevBox->y2 = pCurBox->y2;
@@ -209,16 +182,6 @@ static int rdp_region_combine(rdpRegion* pReg, int prevStart, int curStart)
 				curNumRects -= 1;
 			} while (curNumRects != 0);
 
-			/*
-			 * If only one band was added to the region, we have to backup
-			 * curStart to the start of the previous band.
-			 *
-			 * If more than one band was added to the region, copy the
-			 * other bands down. The assumption here is that the other bands
-			 * came from the same region as the current one and no further
-			 * coalescing can be done on them since it's all been done
-			 * already... curStart is already in the right place.
-			 */
 			if (pCurBox == pRegEnd)
 			{
 				curStart = prevStart;
@@ -282,7 +245,6 @@ static inline rdpBox* rdp_region_merge(rdpRegion* reg, rdpBox* cur_rect, rdpBox*
 		if (next_rect[-1].x2 < cur_rect->x2)
 		{
 			next_rect[-1].x2 = cur_rect->x2;
-			//assert(next_rect[-1].x1 < next_rect[-1].x2);
 		}
 	}
 	else
@@ -295,7 +257,7 @@ static inline rdpBox* rdp_region_merge(rdpRegion* reg, rdpBox* cur_rect, rdpBox*
 		reg->numRects++;
 		next_rect++;
 	}
-	//assert(reg->numRects <= reg->size);
+
 	return next_rect;
 }
 
@@ -331,13 +293,7 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 
 	EMPTY_REGION(new_reg);
 
-	/*
-	 * Allocate a reasonable number of rectangles for the new region. The idea
-	 * is to allocate enough so the individual functions don't need to
-	 * reallocate and copy the array, which is time consuming, yet we don't
-	 * have to worry about using too much memory. I hope to be able to
-	 * nuke the xrealloc() at the end of this function eventually.
-	 */
+	/* Allocate large enough size to prevent reallocate */
 	new_reg->size = MAX(reg1->numRects,reg2->numRects) * 2;
 
 	if ( !(new_reg->rects = (rdpBox*)xmalloc(RDP_BOX_SIZE * new_reg->size)) )
@@ -346,46 +302,17 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 		return;
 	}
 
-	/*
-	 * Initialize ybot and ytop.
-	 * In the upcoming loop, ybot and ytop serve different functions depending
-	 * on whether the band being handled is an overlapping or non-overlapping
-	 * band.
-	 * 	In the case of a non-overlapping band (only one of the regions
-	 * has points in the band), ybot is the bottom of the most recent
-	 * intersection and thus clips the top of the rectangles in that band.
-	 * ytop is the top of the next intersection between the two regions and
-	 * serves to clip the bottom of the rectangles in the current band.
-	 *	For an overlapping band (where the two regions intersect), ytop clips
-	 * the top of the rectangles of both regions and ybot clips the bottoms.
-	 */
 	if (reg1->extents.y1 < reg2->extents.y1)
 		ybot = reg1->extents.y1;
 	else
 		ybot = reg2->extents.y1;
 
-	/*
-	 * prev_band serves to mark the start of the previous band so rectangles
-	 * can be coalesced into larger rectangles. qv. rdp_region_combine, above.
-	 * In the beginning, there is no previous band, so prev_band == cur_band
-	 * (cur_band is set later on, of course, but the first band will always
-	 * start at index 0). prev_band and cur_band must be indices because of
-	 * the possible expansion, and resultant moving, of the new region's
-	 * array of rectangles.
-	 */
 	prev_band = 0;
 
 	do
 	{
 		cur_band = new_reg->numRects;
 
-		/*
-		 * This algorithm proceeds one source-band (as opposed to a
-		 * destination band, which is determined by where the two regions
-		 * intersect) at a time. r1_band_end and r2_band_end serve to mark the
-		 * rectangle after the last one in the current band for their
-		 * respective regions.
-		 */
 		r1_band_end = r1;
 		while ((r1_band_end != r1_end) && (r1_band_end->y1 == r1->y1))
 		{
@@ -398,14 +325,6 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 			r2_band_end++;
 		}
 
-		/*
-		 * First handle the band that doesn't intersect, if any.
-		 *
-		 * Note that attention is restricted to one band in the
-		 * non-intersecting region at once, so if a region has n
-		 * bands between the current position and the next place it overlaps
-		 * the other, this entire loop will be passed through n times.
-		 */
 		if (r1->y1 < r2->y1)
 		{
 			top = MAX(r1->y1,ybot);
@@ -434,21 +353,11 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 			ytop = r1->y1;
 		}
 
-		/*
-		 * If any rectangles got added to the region, try and coalesce them
-		 * with rectangles from the previous band. Note we could just do
-		 * this test in rdp_region_combine, but some machines incur a not
-		 * inconsiderable cost for function calls, so...
-		 */
 		if (new_reg->numRects != cur_band)
 		{
 			prev_band = rdp_region_combine (new_reg, prev_band, cur_band);
 		}
 
-		/*
-		 * Now see if we've hit an intersecting band. The two bands only
-		 * intersect if ybot > ytop
-		 */
 		ybot = MIN(r1->y2, r2->y2);
 		cur_band = new_reg->numRects;
 		if (ybot > ytop)
@@ -461,10 +370,6 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 			prev_band = rdp_region_combine (new_reg, prev_band, cur_band);
 		}
 
-		/*
-		 * If we've finished with a band (y2 == ybot) we skip forward
-		 * in the region to the next band.
-		 */
 		if (r1->y2 == ybot)
 		{
 			r1 = r1_band_end;
@@ -475,9 +380,7 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 		}
 	} while ((r1 != r1_end) && (r2 != r2_end));
 
-	/*
-	 * Deal with whichever region still has rectangles left.
-	 */
+
 	cur_band = new_reg->numRects;
 	if (r1 != r1_end)
 	{
@@ -514,14 +417,6 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 		rdp_region_combine(new_reg, prev_band, cur_band);
 	}
 
-	/*
-	 * A bit of cleanup. To keep regions from growing without bound,
-	 * we shrink the array of rectangles to match the new number of
-	 * rectangles in the region. This never goes to 0, however...
-	 *
-	 * Only do this stuff if the number of rectangles allocated is more than
-	 * twice the number of rectangles in the region (a simple optimization...).
-	 */
 	if (new_reg->numRects < (new_reg->size >> 1))
 	{
 		if (REGION_NOT_EMPTY(new_reg))
@@ -534,10 +429,6 @@ static void rdp_region_op(rdpRegion* new_reg,  rdpRegion* reg1,  rdpRegion* reg2
 		}
 		else
 		{
-			/*
-			 * No point in doing the extra work involved in an xrealloc if
-			 * the region is empty
-			 */
 			new_reg->size = 1;
 			xfree((char *) new_reg->rects);
 			new_reg->rects = (rdpBox*)xmalloc(RDP_BOX_SIZE);
@@ -553,11 +444,8 @@ static int rdp_region_union_non_overlap(rdpRegion* pReg, rdpBox* r, rdpBox* rEnd
 
 	next_rect = &pReg->rects[pReg->numRects];
 
-	assert(y1 < y2);
-
 	while (r != rEnd)
 	{
-		assert(r->x1 < r->x2);
 		next_rect = rdp_region_check(pReg, next_rect);
 		next_rect->x1 = r->x1;
 		next_rect->y1 = y1;
@@ -566,7 +454,6 @@ static int rdp_region_union_non_overlap(rdpRegion* pReg, rdpBox* r, rdpBox* rEnd
 		pReg->numRects += 1;
 		next_rect++;
 
-		assert(pReg->numRects <= pReg->size);
 		r++;
 	}
 	return 0;
@@ -578,8 +465,6 @@ static int rdp_region_union_overlap(rdpRegion* pReg, rdpBox* r1, rdpBox* r1_end,
 
 	next_rect = &pReg->rects[pReg->numRects];
 
-
-	assert (y1<y2);
 	while ((r1 != r1_end) && (r2 != r2_end))
 	{
 		if (r1->x1 < r2->x1)
@@ -632,7 +517,6 @@ static int rdp_region_intersect_overlap(rdpRegion* region, rdpBox* r1, rdpBox* r
 			next_rect->y2 = y2;
 			region->numRects += 1;
 			next_rect++;
-			assert(region->numRects <= region->size);
 		}
 
 		if (r1->x2 < r2->x2)
@@ -722,6 +606,11 @@ boolean rdp_region_init(rdpRegion* region)
 	return true;
 }
 
+/** Initialize rdp region with one rectangle
+ *  @param region - Pointer to the rdp_freerdp structure that was initialized by a call to rdp_region_new().
+ *  @param region - Pointer to the rdpRect structure.
+ *  @return true if successful. false otherwise.
+ */
 boolean rdp_region_init_rect(rdpRegion* region, rdpRect* rect)
 {
 	if (!rect)
@@ -746,6 +635,10 @@ boolean rdp_region_init_rect(rdpRegion* region, rdpRect* rect)
 	return true;
 }
 
+/** Get the number of rectangles in the region
+ *  @param region - Pointer to the rdp_freerdp structure that was initialized.
+ *  @return the number of rectangles
+ */
 uint32 rdp_region_length(rdpRegion* region)
 {
 	if (!region)
@@ -753,6 +646,10 @@ uint32 rdp_region_length(rdpRegion* region)
 	return region->numRects;
 }
 
+/** Get the internal rectangles in the region, the number of rectangles can be fetched by rdp_region_length()
+ *  @param region - Pointer to the rdp_freerdp structure that was initialized.
+ *  @return the list of rectangles
+ */
 rdpBox* rdp_region_get_rects(rdpRegion* region)
 {
 	if (!region || !region->rects)
@@ -760,6 +657,10 @@ rdpBox* rdp_region_get_rects(rdpRegion* region)
 	return region->rects;
 }
 
+/** Get the extents rectangles in the region
+ *  @param region - Pointer to the rdp_freerdp structure that was initialized.
+ *  @return extents rectangle
+ */
 rdpBox* rdp_region_get_extents(rdpRegion* region)
 {
 	if (!region)
@@ -767,6 +668,12 @@ rdpBox* rdp_region_get_extents(rdpRegion* region)
 	return &region->extents;
 }
 
+/** Computes the union of two regions
+ *  @param region1 - The first source region
+ *  @param region2 - The second source region
+ *  @param new_region - The destination region contains the union of region1 and region2
+ *  @return true if successful. false otherwise.
+ */
 boolean rdp_region_union(rdpRegion* region1, rdpRegion* region2, rdpRegion* new_region)
 {
 	if ((region1 == region2) || (!region1->numRects))
@@ -809,6 +716,12 @@ boolean rdp_region_union(rdpRegion* region1, rdpRegion* region2, rdpRegion* new_
 	return true;
 }
 
+/** Updates the destination region from a union of the rectangle and the source region.
+ *  @param rect - The rectangle
+ *  @param src - The source region
+ *  @param dst - The destination region contains the union of rect and src
+ *  @return true if successful. false otherwise.
+ */
 boolean rdp_region_union_rect(rdpRect* rect, rdpRegion* src, rdpRegion* dst)
 {
 	rdpRegion region;
@@ -825,6 +738,12 @@ boolean rdp_region_union_rect(rdpRect* rect, rdpRegion* src, rdpRegion* dst)
 	return rdp_region_union(&region, src, dst);
 }
 
+/** Computes the intersection of two regions
+ *  @param region1 - The first source region
+ *  @param region2 - The second source region
+ *  @param new_region - The destination region contains the intersection of region1 and region2
+ *  @return true if successful. false otherwise.
+ */
 boolean rdp_region_intersect(rdpRegion* region1, rdpRegion* region2, rdpRegion* new_region)
 {
 	if ( (!(region1->numRects)) || (!(region2->numRects)) ||
