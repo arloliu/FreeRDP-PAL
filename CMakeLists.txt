@@ -182,6 +182,12 @@ set(FREERDP_PLUGIN_PATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/freerdp
 # Path to put extensions
 set(FREERDP_EXTENSION_PATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/freerdp/extensions")
 
+set(FREERDP_DEFAULT_PLATFORM "default")
+set(FREERDP_PLATFORM "${FREERDP_DEFAULT_PLATFORM}")
+if(PLATFORM)
+	set(FREERDP_PLATFORM  "${PLATFORM}")
+endif()
+
 # Include directories
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -189,6 +195,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # Configure files
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/freerdp/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/freerdp/config.h)
+
 
 # Generate pkg-config
 if(NOT MSVC)

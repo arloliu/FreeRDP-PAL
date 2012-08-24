@@ -19,8 +19,7 @@
 
 include(FindXmlto)
 include_directories(${X11_INCLUDE_DIRS})
-
-add_executable(xfreerdp
+set(XFREERDP_SRCS
 	xf_gdi.c
 	xf_gdi.h
 	xf_rail.c
@@ -41,6 +40,18 @@ add_executable(xfreerdp
 	xf_window.h
 	xfreerdp.c
 	xfreerdp.h)
+
+# Default platform
+if(FREERDP_PLATFORM STREQUAL "default")
+	set(XFREERDP_SRCS ${XFREERDP_SRCS} xf_platform_default.c xf_platform_default.h)
+endif()
+
+# Cloudvue CVT8311 RemoteFX decoder platform
+if(FREERDP_PLATFORM STREQUAL "cvt")
+	set(XFREERDP_SRCS ${XFREERDP_SRCS} xf_platform_cvt.c xf_platform_cvt.h)
+endif()
+
+add_executable(xfreerdp  ${XFREERDP_SRCS})
 
 if(WITH_MANPAGES)
 	if(XMLTO_FOUND)
